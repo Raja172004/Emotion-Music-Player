@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: emotion-music-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: emotion_music_db
+      MYSQL_USER: musicuser
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - emotion-music-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: emotion-music-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/emotion_music_db
+      SPRING_DATASOURCE_USERNAME: musicuser
+      SPRING_DATASOURCE_PASSWORD: password
+      APP_DEEPFACE_API_URL: http://deepface-api:5000/analyze
+      APP_DEEPFACE_ENABLED: true
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+    networks:
+      - emotion-music-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/actuator/health"]
+      timeout: 10s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: emotion-music-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8080/api
+    networks:
+      - emotion-music-network
+    depends_on:
+      - backend
+
+  deepface-api:
+    build:
+      context: ./deepface-service
+      dockerfile: Dockerfile
+    container_name: emotion-deepface-api
+    ports:
+      - "5000:5000"
+    networks:
+      - emotion-music-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      timeout: 10s
+      retries: 3
+
+volumes:
+  mysql_data:
+
+networks:
+  emotion-music-network:
+    driver: bridge
